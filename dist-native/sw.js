@@ -1,4 +1,4 @@
-const CACHE = "finmix-public-safety-v1";
+const CACHE = "finmix-public-safety-v2";
 const PUBLIC_FILES = [
   "/offline.html",
   "/offline.css",
