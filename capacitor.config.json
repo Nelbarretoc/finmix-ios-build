@@ -1,0 +1,17 @@
+{
+  "appId": "com.th3rdgroup.finmix",
+  "appName": "FinMix",
+  "webDir": "dist-native",
+  "loggingBehavior": "none",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "ios": {
+    "contentInset": "automatic",
+    "webContentsDebuggingEnabled": false
+  }
+}

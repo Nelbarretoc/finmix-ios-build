@@ -1,0 +1,47 @@
+# Compiles the FinMix iPhone wrapper on a free macOS runner (public
+# repository). Published by scripts/publish-ios-shell.sh in the private FinMix
+# repository; it is unsigned and submits nothing. Signing and TestFlight need
+# an Apple Developer account.
+name: iOS build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-build
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx cap sync ios
+      - name: Show the Xcode version and project schemes
+        run: xcodebuild -version && xcodebuild -list -project ios/App/App.xcodeproj
+      - name: Compile for the iOS simulator (unsigned)
+        run: |
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
+      - name: Package the simulator app
+        run: |
+          cd build/ios/Build/Products/Release-iphonesimulator
+          zip -qry "$GITHUB_WORKSPACE/FinMix-simulator.zip" App.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FinMix-ios-simulator
+          path: FinMix-simulator.zip
+          retention-days: 14
