@@ -100,9 +100,25 @@ jobs:
           xcrun simctl bootstatus "$device" -b
           xcrun simctl install "$device" "$app"
           xcrun simctl launch "$device" "$bundle_id"
-          sleep 8
+          # The first iPad boot can report ready while WebKit is still white.
+          sleep 30
           xcrun simctl io "$device" screenshot FinMix-iPad-launch.png
           sips -g pixelWidth -g pixelHeight FinMix-iPad-launch.png
+          swift - <<'SWIFT'
+          import AppKit
+          import Foundation
+
+          guard let image = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: "FinMix-iPad-launch.png"))) else { exit(1) }
+          var colored = 0
+          for y in stride(from: image.pixelsHigh / 5, to: image.pixelsHigh * 4 / 5, by: 50) {
+            for x in stride(from: image.pixelsWide / 5, to: image.pixelsWide * 4 / 5, by: 50) {
+              guard let pixel = image.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else { continue }
+              if pixel.redComponent < 0.96 || pixel.greenComponent < 0.96 || pixel.blueComponent < 0.96 { colored += 1 }
+            }
+          }
+          guard colored >= 5 else { fputs("iPad capture is blank\n", stderr); exit(1) }
+          print("iPad content samples: \(colored)")
+          SWIFT
           xcrun simctl shutdown "$device"
       - name: Package the simulator app
         run: |
