@@ -18,7 +18,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15
+    # Apple requires Xcode 26+ for current iOS submissions; macos-15 still
+    # defaults to Xcode 16.4 even though its simulator build can pass.
+    runs-on: macos-26
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
