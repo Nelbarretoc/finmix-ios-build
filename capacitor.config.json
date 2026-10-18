@@ -4,11 +4,13 @@
   "webDir": "dist-native",
   "loggingBehavior": "none",
   "server": {
-    "androidScheme": "https"
+    "androidScheme": "https",
+    "errorPath": "webview-update.html"
   },
   "android": {
     "allowMixedContent": false,
-    "webContentsDebuggingEnabled": false
+    "webContentsDebuggingEnabled": false,
+    "minWebViewVersion": 111
   },
   "ios": {
     "contentInset": "automatic",
