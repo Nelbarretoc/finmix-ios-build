@@ -36,6 +36,24 @@ jobs:
             -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
+      - name: Launch the app in an iPhone simulator
+        run: |
+          set -euo pipefail
+          device="$(xcrun simctl list devices available --json | python3 -c '
+          import json, sys
+          devices = (item for group in json.load(sys.stdin)["devices"].values() for item in group)
+          print(next(item["udid"] for item in devices if item["name"].startswith("iPhone") and item["state"] == "Shutdown"))
+          ')"
+          app='build/ios/Build/Products/Release-iphonesimulator/App.app'
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
+          xcrun simctl boot "$device"
+          xcrun simctl bootstatus "$device" -b
+          xcrun simctl install "$device" "$app"
+          xcrun simctl launch "$device" "$bundle_id"
+          sleep 8
+          xcrun simctl io "$device" screenshot FinMix-launch.png
+          sips -g pixelWidth -g pixelHeight FinMix-launch.png
+          xcrun simctl shutdown "$device"
       - name: Package the simulator app
         run: |
           cd build/ios/Build/Products/Release-iphonesimulator
@@ -43,5 +61,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: FinMix-ios-simulator
-          path: FinMix-simulator.zip
+          path: |
+            FinMix-simulator.zip
+            FinMix-launch.png
           retention-days: 14
