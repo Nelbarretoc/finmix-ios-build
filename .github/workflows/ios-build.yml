@@ -1,7 +1,7 @@
 # Compiles the FinMix iPhone wrapper on a free macOS runner (public
 # repository). Published by scripts/publish-ios-shell.sh in the private FinMix
-# repository; it is unsigned and submits nothing. Signing and TestFlight need
-# an Apple Developer account.
+# repository; simulator and device archives are unsigned and submit nothing.
+# Signing and TestFlight need an Apple Developer account.
 name: iOS build
 
 on:
@@ -36,6 +36,20 @@ jobs:
             -configuration Release -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/ios CODE_SIGNING_ALLOWED=NO build
+      - name: Compile a physical-device release archive (unsigned)
+        run: |
+          set -euo pipefail
+          archive='build/FinMix.xcarchive'
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Release -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$archive" CODE_SIGNING_ALLOWED=NO archive
+          app="$archive/Products/Applications/App.app"
+          test -d "$app"
+          bundle_id="$(/usr/libexec/PlistBuddy -c 'Print CFBundleIdentifier' "$app/Info.plist")"
+          test "$bundle_id" = 'com.th3rdgroup.finmix'
+          /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Info.plist"
       - name: Launch the app in an iPhone simulator
         run: |
           set -euo pipefail
