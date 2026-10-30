@@ -73,6 +73,7 @@ jobs:
           swift - <<'SWIFT'
           import AppKit
           import Foundation
+          import Vision
 
           guard let image = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: "FinMix-launch.png"))) else { exit(1) }
           var colored = 0
@@ -84,6 +85,19 @@ jobs:
           }
           guard colored >= 5 else { fputs("iPhone capture is blank\n", stderr); exit(1) }
           print("iPhone content samples: \(colored)")
+          guard let cgImage = image.cgImage else { exit(1) }
+          let recognition = VNRecognizeTextRequest()
+          recognition.recognitionLevel = .accurate
+          recognition.recognitionLanguages = ["en-US", "es-ES"]
+          try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([recognition])
+          let labels = recognition.results?.compactMap {
+            $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          } ?? []
+          guard labels.contains("sign in") || labels.contains("iniciar sesión") else {
+            fputs("Native welcome did not reach the sign-in action\n", stderr)
+            exit(1)
+          }
+          print("Native sign-in action verified")
           SWIFT
           xcrun simctl shutdown "$device"
       - name: Launch the app in an iPad simulator
@@ -107,6 +121,7 @@ jobs:
           swift - <<'SWIFT'
           import AppKit
           import Foundation
+          import Vision
 
           guard let image = NSBitmapImageRep(data: try! Data(contentsOf: URL(fileURLWithPath: "FinMix-iPad-launch.png"))) else { exit(1) }
           var colored = 0
@@ -118,6 +133,19 @@ jobs:
           }
           guard colored >= 5 else { fputs("iPad capture is blank\n", stderr); exit(1) }
           print("iPad content samples: \(colored)")
+          guard let cgImage = image.cgImage else { exit(1) }
+          let recognition = VNRecognizeTextRequest()
+          recognition.recognitionLevel = .accurate
+          recognition.recognitionLanguages = ["en-US", "es-ES"]
+          try VNImageRequestHandler(cgImage: cgImage, options: [:]).perform([recognition])
+          let labels = recognition.results?.compactMap {
+            $0.topCandidates(1).first?.string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+          } ?? []
+          guard labels.contains("sign in") || labels.contains("iniciar sesión") else {
+            fputs("Native welcome did not reach the sign-in action\n", stderr)
+            exit(1)
+          }
+          print("Native sign-in action verified")
           SWIFT
           xcrun simctl shutdown "$device"
       - name: Package the simulator app
