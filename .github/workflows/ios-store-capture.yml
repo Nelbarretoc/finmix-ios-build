@@ -63,7 +63,8 @@ jobs:
           xcodebuild -project ios/App/App.xcodeproj -scheme App \
             -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/capture CODE_SIGNING_ALLOWED=NO build
+            -derivedDataPath build/capture CODE_SIGNING_ALLOWED=NO \
+            ENABLE_DEBUG_DYLIB=NO build
       - name: Decode the capture-only reviewer secret into a private runner file
         env:
           FINMIX_CAPTURE_REVIEWER_BASE64: ${{ secrets.FINMIX_CAPTURE_REVIEWER_BASE64 }}

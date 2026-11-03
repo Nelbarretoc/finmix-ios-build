@@ -204,7 +204,7 @@ def capture(app, output):
     runtime = max(ios, key=lambda r: tuple(int(x) for x in r["version"].split(".")))["identifier"]
     types = json.loads(tool(["xcrun", "simctl", "list", "devicetypes", "--json"]))["devicetypes"]
     choices = [
-        ("iphone-large", ["iPhone 17 Pro Max", "iPhone 16 Pro Max"], (1320, 2868)),
+        ("iphone-medium", ["iPhone 17 Pro", "iPhone 17", "iPhone 16 Pro"], (1206, 2622)),
         ("ipad-13", ["iPad Pro 13-inch (M5)", "iPad Pro 13-inch (M4)"], (2064, 2752)),
     ]
     captures = []

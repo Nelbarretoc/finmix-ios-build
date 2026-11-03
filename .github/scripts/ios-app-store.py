@@ -308,13 +308,36 @@ def verify_release_executable(app, info):
     require(all(marker not in content for marker in (b"FINMIX_DEBUG_CAPTURE_HARNESS_V1", b"NativeCaptureHarness")), "Signed app contains a debug capture harness")
 
 
+def verify_photo_permissions(app, info):
+    keys = ("NSCameraUsageDescription", "NSPhotoLibraryUsageDescription", "NSPhotoLibraryAddUsageDescription")
+    source = Path("ios/App/App/Info.plist")
+    require(source.is_file(), "Reviewed app permission plist is missing")
+    expected = plistlib.loads(source.read_bytes())
+    for key in keys:
+        value = expected.get(key)
+        require(isinstance(value, str) and bool(value.strip()) and info.get(key) == value, "Signed app photo permission differs from its reviewed source")
+    for language in ("en", "es"):
+        relative = f"{language}.lproj/InfoPlist.strings"
+        source, bundled = Path("ios/App/App") / relative, app / relative
+        require(source.is_file() and bundled.is_file(), "Signed app is missing a required localized photo permission resource")
+        # Xcode may compile .strings to binary plist; plutil accepts both the
+        # reviewed text source and compiled resource without changing either.
+        expected = plistlib.loads(capture(["plutil", "-convert", "xml1", "-o", "-", str(source)], "Reviewed localized app permission decoding"))
+        actual = plistlib.loads(capture(["plutil", "-convert", "xml1", "-o", "-", str(bundled)], "Bundled localized app permission decoding"))
+        for key in keys:
+            value = expected.get(key)
+            require(isinstance(value, str) and bool(value.strip()) and actual.get(key) == value, "Signed app localized photo permission differs from its reviewed source")
+
+
 def verify_bundle(app, cfg, private):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     require(info.get("CFBundleIdentifier") == BUNDLE_ID, "Signed bundle ID mismatch")
     require(str(info.get("CFBundleVersion")) == cfg["FINMIX_BUILD_NUMBER"], "Signed build number mismatch")
+    require(info.get("ITSAppUsesNonExemptEncryption") is False, "Signed app encryption declaration is missing or differs from the reviewed OS-only configuration")
     version = info.get("CFBundleShortVersionString", "")
     require(bool(re.fullmatch(r"\d+\.\d+(?:\.\d+)?", version)), "Invalid signed app version")
     verify_release_executable(app, info)
+    verify_photo_permissions(app, info)
     run_private(["codesign", "--verify", "--deep", "--strict", str(app)], "verify-signature", private)
     entitlements = plistlib.loads(capture(["codesign", "--display", "--entitlements", "-", "--xml", str(app)], "Signed entitlement check"))
     validate_bundle_entitlements(entitlements, cfg)

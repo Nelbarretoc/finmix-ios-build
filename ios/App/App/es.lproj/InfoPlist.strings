@@ -1,0 +1,3 @@
+"NSCameraUsageDescription" = "FinMix usa tu cámara cuando eliges fotografiar una factura o documento para organizar tus pagos y citas.";
+"NSPhotoLibraryUsageDescription" = "FinMix usa las fotos de facturas y capturas de pantalla que eliges adjuntar para organizar tus pagos y citas.";
+"NSPhotoLibraryAddUsageDescription" = "FinMix guarda una imagen en tu biblioteca de Fotos cuando eliges guardarla desde la app.";

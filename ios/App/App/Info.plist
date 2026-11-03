@@ -33,6 +33,14 @@
 	</array>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>NSCameraUsageDescription</key>
+	<string>FinMix uses your camera when you choose to photograph a bill or document to organize your payments and appointments.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>FinMix uses the bill photos and screenshots you choose to attach so you can organize your payments and appointments.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>FinMix saves an image to your Photos library when you choose to save it from the app.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
