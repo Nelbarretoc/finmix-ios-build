@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		F17C4A000000000000000001 /* NativeCaptureHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17C4A000000000000000002 /* NativeCaptureHarness.swift */; };
 		F17F1A000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F17F1A000000000000000002 /* PrivacyInfo.xcprivacy */; };
 		B411D1A00000000000000001 /* BankBrowserPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = B411D1A00000000000000002 /* BankBrowserPlugin.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
@@ -21,6 +22,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		F17C4A000000000000000002 /* NativeCaptureHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCaptureHarness.swift; sourceTree = "<group>"; };
 		F17F1A000000000000000002 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		B411D1A00000000000000002 /* BankBrowserPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BankBrowserPlugin.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
@@ -70,6 +72,7 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				B411D1A00000000000000002 /* BankBrowserPlugin.swift */,
+				F17C4A000000000000000002 /* NativeCaptureHarness.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -168,6 +171,7 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				B411D1A00000000000000001 /* BankBrowserPlugin.swift in Sources */,
+				F17C4A000000000000000001 /* NativeCaptureHarness.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

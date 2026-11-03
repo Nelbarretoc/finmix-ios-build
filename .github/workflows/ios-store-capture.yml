@@ -1,0 +1,91 @@
+# Native screenshots only. This never uploads a build or changes app records.
+name: iOS native store screenshots
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact reviewed private application commit
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-native-store-screenshots
+  cancel-in-progress: false
+
+jobs:
+  screenshots:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      FINMIX_CAPTURE_SOURCE_COMMIT: ${{ inputs.source_commit }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Require the reviewed source revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+          expected = os.environ['FINMIX_CAPTURE_SOURCE_COMMIT']
+          if not re.fullmatch(r'[0-9a-f]{40}', expected) or Path('SOURCE_COMMIT').read_text().strip() != expected:
+              raise SystemExit('Capture source does not match the reviewed revision')
+          PY
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx cap sync ios
+      - name: Verify Python and Swift fixture hashing agree
+        run: python3 -B .github/scripts/ios-store-capture.py check-canonical
+      - name: Prove the Release executable excludes the capture harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Release -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/capture CODE_SIGNING_ALLOWED=NO build
+          python3 -B .github/scripts/ios-store-capture.py verify-release \
+            --app build/capture/Build/Products/Release-iphonesimulator/App.app
+      - name: Build the simulator-only capture driver with unchanged web assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project ios/App/App.xcodeproj -scheme App \
+            -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -derivedDataPath build/capture CODE_SIGNING_ALLOWED=NO build
+      - name: Decode the capture-only reviewer secret into a private runner file
+        env:
+          FINMIX_CAPTURE_REVIEWER_BASE64: ${{ secrets.FINMIX_CAPTURE_REVIEWER_BASE64 }}
+        run: python3 -B .github/scripts/ios-store-capture.py bootstrap
+      - name: Capture the authenticated fictional household in English and Spanish
+        run: |
+          python3 -B .github/scripts/ios-store-capture.py capture \
+            --app build/capture/Build/Products/Debug-iphonesimulator/App.app \
+            --output native-store-screenshots
+      - name: Remove the private bootstrap file on every outcome
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import os, shutil
+          from pathlib import Path
+          shutil.rmtree(Path(os.environ['RUNNER_TEMP']) / 'finmix-capture', ignore_errors=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FinMix-native-store-screenshots
+          path: |
+            native-store-screenshots/*.jpg
+            native-store-screenshots/manifest.json
+          if-no-files-found: error
+          retention-days: 7

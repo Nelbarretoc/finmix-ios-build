@@ -3,8 +3,17 @@ import Capacitor
 import AuthenticationServices
 
 class AlDiaBridgeViewController: CAPBridgeViewController {
+#if DEBUG && targetEnvironment(simulator)
+    private var nativeCapture: NativeCaptureHarness?
+#endif
     override func capacitorDidLoad() {
         bridge?.registerPluginInstance(BankBrowserPlugin())
+#if DEBUG && targetEnvironment(simulator)
+        if let webView = bridge?.webView {
+            nativeCapture = NativeCaptureHarness(webView: webView)
+            nativeCapture?.start()
+        }
+#endif
     }
 }
 

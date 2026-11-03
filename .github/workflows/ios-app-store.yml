@@ -11,7 +11,7 @@ on:
         required: true
         type: string
       team_id:
-        description: Verified organization Apple Team ID
+        description: Verified Apple Team ID for the private build upload
         required: true
         type: string
       profile_uuid:

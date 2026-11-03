@@ -299,12 +299,22 @@ def verify_privacy_manifests(app):
         require(plistlib.loads(source.read_bytes()) == plistlib.loads(bundled.read_bytes()), "Signed app privacy declaration differs from its reviewed source")
 
 
+def verify_release_executable(app, info):
+    name = info.get("CFBundleExecutable", "")
+    require(isinstance(name, str) and name not in ("", ".", "..") and Path(name).name == name, "Signed app has an invalid executable name")
+    executable = app / name
+    require(executable.is_file() and not executable.is_symlink(), "Signed app executable is missing or linked")
+    content = executable.read_bytes()
+    require(all(marker not in content for marker in (b"FINMIX_DEBUG_CAPTURE_HARNESS_V1", b"NativeCaptureHarness")), "Signed app contains a debug capture harness")
+
+
 def verify_bundle(app, cfg, private):
     info = plistlib.loads((app / "Info.plist").read_bytes())
     require(info.get("CFBundleIdentifier") == BUNDLE_ID, "Signed bundle ID mismatch")
     require(str(info.get("CFBundleVersion")) == cfg["FINMIX_BUILD_NUMBER"], "Signed build number mismatch")
     version = info.get("CFBundleShortVersionString", "")
     require(bool(re.fullmatch(r"\d+\.\d+(?:\.\d+)?", version)), "Invalid signed app version")
+    verify_release_executable(app, info)
     run_private(["codesign", "--verify", "--deep", "--strict", str(app)], "verify-signature", private)
     entitlements = plistlib.loads(capture(["codesign", "--display", "--entitlements", "-", "--xml", str(app)], "Signed entitlement check"))
     validate_bundle_entitlements(entitlements, cfg)
