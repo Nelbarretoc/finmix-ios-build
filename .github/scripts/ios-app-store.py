@@ -90,18 +90,27 @@ def check_source(cfg):
     require(capture(["git", "rev-parse", "HEAD"], "Wrapper revision check").decode().strip() == os.environ["GITHUB_SHA"], "Checkout does not match the dispatched wrapper revision")
 
 
-def check_tools():
+def check_tools(diagnostics=False):
     version = capture(["xcodebuild", "-version"], "Xcode version check").decode()
     match = re.search(r"Xcode (\d+)", version)
     require(match is not None and int(match[1]) >= 26, "Xcode 26 or later is required")
     help_result = subprocess.run(["xcodebuild", "-help"], capture_output=True, env=tool_environment())
     help_text = (help_result.stdout + help_result.stderr).decode(errors="replace")
-    for option in ("app-store-connect", "provisioningProfiles", "signingCertificate", "signingStyle", "manageAppVersionAndBuildNumber", "destination", "teamID"):
-        require(option in help_text, "Runner xcodebuild lacks a required App Store export option")
+    missing = [option for option in ("app-store-connect", "provisioningProfiles", "signingCertificate", "signingStyle", "manageAppVersionAndBuildNumber", "destination", "teamID") if option not in help_text]
+    require(not missing, f"Runner xcodebuild help (exit {help_result.returncode}) is missing required export options: {', '.join(missing)}")
     help_result = subprocess.run(["xcrun", "altool", "--help"], capture_output=True, env=tool_environment())
     help_text = (help_result.stdout + help_result.stderr).decode(errors="replace")
-    for option in ("--upload-package", "--validate-app", "--apiKey", "--apiIssuer", "--apple-id", "--asc-public-id", "--bundle-version", "--type"):
-        require(option in help_text, "Runner altool lacks a required App Store upload option")
+    missing = [option for option in ("--upload-package", "--validate-app", "--apiKey", "--apiIssuer", "--apple-id", "--asc-public-id", "--bundle-version", "--type") if option not in help_text]
+    if missing and diagnostics:
+        # Only the fixed, unauthenticated help command may be printed. Never
+        # reuse this path for signing, validation, upload or credential errors.
+        credential_names = (*SECRET_NAMES, "API_PRIVATE_KEYS_DIR", "GH_TOKEN", "GITHUB_TOKEN")
+        if not any(os.environ.get(name) for name in credential_names):
+            print(f"Installed xcrun altool --help (exit {help_result.returncode}; no authentication supplied):", flush=True)
+            print(help_text, flush=True)
+        else:
+            print("Installed altool help is not printed in a credential-bearing environment.", flush=True)
+    require(not missing, f"Runner altool help (exit {help_result.returncode}) is missing required upload options: {', '.join(missing)}")
     manual = capture(["man", "-P", "cat", "codesign"], "Installed codesign documentation")
     manual = re.sub(r".\x08", "", manual.decode(errors="replace"))
     require("--entitlements" in manual and "--xml" in manual, "Runner codesign does not document XML entitlement output")
@@ -391,7 +400,7 @@ def main():
             cleanup()
             return 0
         if command == "tools":
-            check_tools()
+            check_tools(diagnostics=True)
             print("Installed Apple archive, export and upload tool options verified; nothing was signed or uploaded.")
             return 0
         cfg = config(os.environ)
