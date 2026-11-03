@@ -2,9 +2,10 @@
 """Manual App Store release helper; no secrets or IPA become public artifacts.
 
 Apple tool contracts, checked 2026-11-03:
-https://help.apple.com/asc/appsaltool/en.lproj/static.html
 https://help.apple.com/xcode/mac/current/en.lproj/deva1f2ab5a2.html
 https://developer.apple.com/documentation/technotes/tn3125-inside-code-signing-provisioning-profiles
+https://developer.apple.com/documentation/appstoreconnectapi/generating-tokens-for-api-requests
+altool 26.40.1 help: https://github.com/Nelbarretoc/finmix-ios-build/actions/runs/41688047289
 Runtime xcodebuild/altool help is checked before decoding credentials.
 """
 
@@ -100,7 +101,7 @@ def check_tools(diagnostics=False):
     require(not missing, f"Runner xcodebuild help (exit {help_result.returncode}) is missing required export options: {', '.join(missing)}")
     help_result = subprocess.run(["xcrun", "altool", "--help"], capture_output=True, env=tool_environment())
     help_text = (help_result.stdout + help_result.stderr).decode(errors="replace")
-    missing = [option for option in ("--upload-package", "--validate-app", "--apiKey", "--apiIssuer", "--apple-id", "--asc-public-id", "--bundle-version", "--type") if option not in help_text]
+    missing = [option for option in ("--upload-package", "--validate-app", "--api-key", "--api-issuer", "--provider-public-id", "--output-format", "API_PRIVATE_KEYS_DIR") if not re.search(r"(?<![\w-])" + re.escape(option) + r"(?![\w-])", help_text)]
     if missing and diagnostics:
         # Only the fixed, unauthenticated help command may be printed. Never
         # reuse this path for signing, validation, upload or credential errors.
@@ -110,7 +111,7 @@ def check_tools(diagnostics=False):
             print(help_text, flush=True)
         else:
             print("Installed altool help is not printed in a credential-bearing environment.", flush=True)
-    require(not missing, f"Runner altool help (exit {help_result.returncode}) is missing required upload options: {', '.join(missing)}")
+    require(help_result.returncode == 0 and not missing, f"Runner altool help (exit {help_result.returncode}) is missing required upload options: {', '.join(missing)}")
     manual = capture(["man", "-P", "cat", "codesign"], "Installed codesign documentation")
     manual = re.sub(r".\x08", "", manual.decode(errors="replace"))
     require("--entitlements" in manual and "--xml" in manual, "Runner codesign does not document XML entitlement output")
@@ -194,8 +195,37 @@ def validate_build_settings(targets, cfg, identity):
             require(not target.get("buildSettings", {}).get("PROVISIONING_PROFILE_SPECIFIER"), "App provisioning profile leaked into a dependency target")
 
 
-def upload_command(ipa, cfg, version, key_id, issuer_id):
-    return ["xcrun", "altool", "--upload-package", str(ipa), "--type", "ios", "--asc-public-id", cfg["FINMIX_ASC_PUBLIC_ID"], "--apple-id", cfg["FINMIX_APP_APPLE_ID"], "--bundle-id", BUNDLE_ID, "--bundle-short-version-string", version, "--bundle-version", cfg["FINMIX_BUILD_NUMBER"], "--apiKey", key_id, "--apiIssuer", issuer_id, "--output-format", "json"]
+def apple_command(operation, ipa, cfg, key_id, issuer_id):
+    require(operation in ("--validate-app", "--upload-package"), "Unsupported App Store operation")
+    # altool 26 reads the already verified bundle/version from the IPA itself.
+    return ["xcrun", "altool", operation, str(ipa), "--provider-public-id", cfg["FINMIX_ASC_PUBLIC_ID"], "--api-key", key_id, "--api-issuer", issuer_id, "--output-format", "json"]
+
+
+def verify_apple_app(cfg, key_path, key_id, issuer_id):
+    # One read-only, two-minute scoped token. Neither token nor response is logged.
+    def encode(value):
+        return base64.urlsafe_b64encode(value).rstrip(b"=")
+
+    path = f"/v1/apps/{cfg['FINMIX_APP_APPLE_ID']}"
+    now = int(dt.datetime.now(dt.timezone.utc).timestamp())
+    header = {"alg": "ES256", "kid": key_id, "typ": "JWT"}
+    claims = {"iss": issuer_id, "iat": now, "exp": now + 120, "aud": "appstoreconnect-v1", "scope": [f"GET {path}"]}
+    unsigned = b".".join(encode(json.dumps(value, separators=(",", ":")).encode()) for value in (header, claims))
+    # Node 24 is already installed by this workflow. Its built-in crypto emits
+    # JWT's P1363 signature directly, without custom ASN.1 conversion or a package.
+    signer = "const fs=require('node:fs'),crypto=require('node:crypto');process.stdout.write(crypto.sign('sha256',fs.readFileSync(0),{key:fs.readFileSync(process.argv[1]),dsaEncoding:'ieee-p1363'}));"
+    signed = subprocess.run(["node", "-e", signer, str(key_path)], input=unsigned, capture_output=True, env=tool_environment())
+    require(signed.returncode == 0 and len(signed.stdout) == 64, "App identity token signing failed; no sensitive output was printed")
+    token = (unsigned + b"." + encode(signed.stdout)).decode()
+    request = urllib.request.Request("https://api.appstoreconnect.apple.com" + path, headers={"Authorization": "Bearer " + token, "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(request, timeout=30) as response:
+            data = json.load(response).get("data", {})
+        require(data.get("type") == "apps" and data.get("id") == cfg["FINMIX_APP_APPLE_ID"] and data.get("attributes", {}).get("bundleId") == BUNDLE_ID, "App Store app ID does not match the verified FinMix bundle")
+    except ReleaseError:
+        raise
+    except Exception:
+        raise ReleaseError("App Store app identity lookup failed; no sensitive response was printed") from None
 
 
 def workspace():
@@ -327,6 +357,9 @@ def release(cfg):
         keys.mkdir(mode=0o700)
         decode("APP_STORE_CONNECT_API_KEY_BASE64", keys / f"AuthKey_{key_id}.p8")
         run_private(["openssl", "pkey", "-in", str(keys / f"AuthKey_{key_id}.p8"), "-check", "-noout"], "api-key-check", private)
+        verify_apple_app(cfg, keys / f"AuthKey_{key_id}.p8", key_id, issuer_id)
+        result["appleAppIdentity"] = "verified"
+        record()
         profile = plistlib.loads(capture(["security", "cms", "-D", "-i", str(private / "profile.mobileprovision")], "Provisioning profile decoding"))
         allowed = validate_profile(profile, cfg, dt.datetime.now(dt.timezone.utc))
         cfg = {**cfg, "FINMIX_PROFILE_UUID": profile["UUID"]}
@@ -379,13 +412,13 @@ def release(cfg):
         result.update({"signedVerified": True, "version": version, "matchedNativeFiles": count, "ipaSha256": hashlib.sha256(ipa.read_bytes()).hexdigest()})
         record()
         upload_env = {**os.environ, "API_PRIVATE_KEYS_DIR": str(keys)}
-        run_private(["xcrun", "altool", "--validate-app", "-f", str(ipa), "--type", "ios", "--apiKey", key_id, "--apiIssuer", issuer_id, "--output-format", "json"], "apple-validation", private, upload_env)
+        run_private(apple_command("--validate-app", ipa, cfg, key_id, issuer_id), "apple-validation", private, upload_env)
         result["appleValidation"] = "passed"
         record()
         if cfg["FINMIX_UPLOAD"] == "true":
             result["upload"] = "attempted_outcome_unknown"
             record()
-            run_private(upload_command(ipa, cfg, version, key_id, issuer_id), "apple-upload", private, upload_env)
+            run_private(apple_command("--upload-package", ipa, cfg, key_id, issuer_id), "apple-upload", private, upload_env)
             result["upload"] = "uploaded_for_processing"
             record()
         print("Signed IPA verified and Apple validation passed. " + ("Upload accepted for processing; TestFlight and App Store release are not confirmed." if cfg["FINMIX_UPLOAD"] == "true" else "Upload was not requested; private IPA is removed after validation."))
