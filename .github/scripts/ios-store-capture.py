@@ -155,6 +155,9 @@ def tool(args, timeout=120, tolerate=False, phase="native tool"):
     try:
         result = subprocess.run(args, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=timeout)
     except subprocess.TimeoutExpired:
+        if tolerate:
+            print(f"Capture warning: {phase} timed out", file=sys.stderr)
+            return ""
         raise CaptureError(f"{phase} timed out") from None
     if result.returncode and not tolerate:
         raise CaptureError(f"{phase} failed")
@@ -185,6 +188,31 @@ def wait_status(path, expected, timeout=80, phase="native readiness"):
             pass
         time.sleep(0.5)
     raise CaptureError(f"{phase} timed out")
+
+
+def cleanup_simulator(device, label, directory):
+    print(f"Capture phase: {label} / cleaning up simulator", flush=True)
+    if directory is not None:
+        try:
+            (directory / "private.json").unlink(missing_ok=True)
+        except OSError:
+            print(f"Capture warning: {label} private input cleanup failed", file=sys.stderr)
+        try:
+            finish = {"id": uuid.uuid4().hex, "route": "finish", "language": "en"}
+            private_write(directory / "command.next", json.dumps(finish).encode())
+            (directory / "command.next").replace(directory / "command.json")
+            wait_status(directory / "status.json", {"state": "finished", "id": finish["id"]}, timeout=5, phase=f"{label} reviewer logout")
+        except Exception:
+            print(f"Capture warning: {label} reviewer logout not confirmed", file=sys.stderr)
+    for operation in ("terminate", "uninstall", "shutdown", "delete"):
+        args = ["xcrun", "simctl", operation, device]
+        if operation in {"terminate", "uninstall"}:
+            args.append(BUNDLE)
+        try:
+            tool(args, timeout=30, tolerate=True, phase=f"{label} simulator {operation}")
+        except Exception:
+            # Cleanup must attempt every step and preserve any original failure.
+            print(f"Capture warning: {label} simulator {operation} cleanup failed", file=sys.stderr)
 
 
 def capture(app, output):
@@ -222,14 +250,18 @@ def capture(app, output):
                 print(f"Capture phase: {label} / booting simulator (maximum 900 seconds)", flush=True)
                 tool(["xcrun", "simctl", "boot", device], phase=f"{label} simulator boot")
                 tool(["xcrun", "simctl", "bootstatus", device, "-b"], timeout=900, phase=f"{label} simulator boot readiness")
-                print(f"Capture phase: {label} / installing app", flush=True)
-                tool(["xcrun", "simctl", "ui", device, "appearance", "light"])
-                tool(["xcrun", "simctl", "status_bar", device, "override", "--time", "9:41", "--dataNetwork", "wifi", "--wifiMode", "active", "--wifiBars", "3", "--batteryState", "charged", "--batteryLevel", "100"])
-                tool(["xcrun", "simctl", "install", device, str(app)])
-                container = Path(tool(["xcrun", "simctl", "get_app_container", device, BUNDLE, "data"]))
+                print(f"Capture phase: {label} / setting appearance", flush=True)
+                tool(["xcrun", "simctl", "ui", device, "appearance", "light"], phase=f"{label} simulator appearance")
+                print(f"Capture phase: {label} / setting status bar", flush=True)
+                tool(["xcrun", "simctl", "status_bar", device, "override", "--time", "9:41", "--dataNetwork", "wifi", "--wifiMode", "active", "--wifiBars", "3", "--batteryState", "charged", "--batteryLevel", "100"], phase=f"{label} simulator status bar")
+                print(f"Capture phase: {label} / installing app (maximum 300 seconds)", flush=True)
+                tool(["xcrun", "simctl", "install", device, str(app)], timeout=300, phase=f"{label} app install")
+                print(f"Capture phase: {label} / locating private app container", flush=True)
+                container = Path(tool(["xcrun", "simctl", "get_app_container", device, BUNDLE, "data"], phase=f"{label} app container"))
                 directory = container / "Documents/FinMixCapture"
                 private_write(directory / "private.json", payload)
-                tool(["xcrun", "simctl", "launch", device, BUNDLE])
+                print(f"Capture phase: {label} / launching app (maximum 300 seconds)", flush=True)
+                tool(["xcrun", "simctl", "launch", device, BUNDLE], timeout=300, phase=f"{label} app launch")
                 print(f"Capture phase: {label} / verifying fictional reviewer", flush=True)
                 wait_status(directory / "status.json", {"state": "authenticated"}, phase=f"{label} reviewer authentication")
                 require(not (directory / "private.json").exists(), "private input not consumed")
@@ -250,19 +282,7 @@ def capture(app, output):
                         require(actual == dimensions, "native screenshot dimensions")
                         captures.append({"file": filename, "language": language, "route": route, "width": actual[0], "height": actual[1], "sha256": hashlib.sha256((output / filename).read_bytes()).hexdigest()})
             finally:
-                print(f"Capture phase: {label} / cleaning up simulator", flush=True)
-                if directory is not None:
-                    try:
-                        finish = {"id": uuid.uuid4().hex, "route": "finish", "language": "en"}
-                        private_write(directory / "command.next", json.dumps(finish).encode())
-                        (directory / "command.next").replace(directory / "command.json")
-                        wait_status(directory / "status.json", {"state": "finished", "id": finish["id"]}, timeout=5)
-                    except Exception:
-                        pass
-                tool(["xcrun", "simctl", "terminate", device, BUNDLE], tolerate=True)
-                tool(["xcrun", "simctl", "uninstall", device, BUNDLE], tolerate=True)
-                tool(["xcrun", "simctl", "shutdown", device], tolerate=True)
-                tool(["xcrun", "simctl", "delete", device], tolerate=True)
+                cleanup_simulator(device, label, directory)
         require(len(captures) == 24, "complete native screenshot set")
         manifest = {"sourceCommit": source, "capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(), "source": "Actual iOS simulator app, bundled production UI and authenticated fictional reviewer", "configuration": "Debug simulator; capture harness excluded from Release", "physicalDeviceAcceptance": False, "readyForVisualReview": True, "captures": captures}
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
