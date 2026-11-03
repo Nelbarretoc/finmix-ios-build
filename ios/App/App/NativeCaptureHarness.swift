@@ -70,6 +70,7 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
                       identity["role"] as? String == "customer",
                       identity["roles"] as? [String] == ["customer"] else { throw CaptureError.invalid }
                 try await verifyFixture()
+                try await waitForDocument()
                 writeStatus(["state": "authenticated", "harness": Self.sentinel])
                 timer = Timer.scheduledTimer(withTimeInterval: 0.25, repeats: true) { [weak self] _ in
                     Task { @MainActor in self?.poll() }
@@ -133,6 +134,7 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
         lastCommand = id
         Task {
             defer { busy = false }
+            var phase = "fixture"
             do {
                 if route == "finish" {
                     _ = try await request("/auth/logout", body: [:])
@@ -142,8 +144,14 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
                 }
                 try await verifyFixture()
                 guard let webView = webView else { throw CaptureError.invalid }
-                _ = try await webView.evaluateJavaScript("localStorage.setItem('finmix-language','\(language)');localStorage.setItem('finmix-appearance',JSON.stringify({mode:'light'}));")
+                phase = "document"
+                try await waitForDocument()
+                phase = "preferences"
+                let saved = try await webView.evaluateJavaScript("(()=>{localStorage.setItem('finmix-language','\(language)');localStorage.setItem('finmix-appearance',JSON.stringify({mode:'light'}));return true;})()")
+                guard saved as? Bool == true else { throw CaptureError.invalid }
+                phase = "navigation"
                 webView.load(URLRequest(url: URL(string: "capacitor://localhost/\(route)?lang=\(language)")!))
+                phase = "page"
                 var stable = 0
                 for _ in 0..<120 {
                     try await Task.sleep(nanoseconds: 500_000_000)
@@ -158,9 +166,22 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
                 }
                 throw CaptureError.invalid
             } catch {
-                writeStatus(["state": "failed", "phase": "page", "id": id])
+                writeStatus(["state": "failed", "phase": phase, "id": id])
             }
         }
+    }
+
+    private func waitForDocument() async throws {
+        // capacitorDidLoad() runs in loadView(), before viewDidLoad() starts
+        // the first navigation. Authentication can finish before WebKit has a
+        // local origin; never touch localStorage in that provisional document.
+        guard let webView = webView else { throw CaptureError.invalid }
+        for _ in 0..<120 {
+            let ready = try? await webView.evaluateJavaScript("(()=>location.protocol==='capacitor:'&&location.hostname==='localhost'&&document.readyState==='complete')()")
+            if ready as? Bool == true { return }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+        throw CaptureError.invalid
     }
 
     private func writeStatus(_ value: [String: String]) {

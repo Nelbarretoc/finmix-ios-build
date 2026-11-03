@@ -10,6 +10,10 @@ on:
         description: Exact reviewed private application commit (40 hexadecimal characters)
         required: true
         type: string
+      unsigned_run_id:
+        description: Successful main iOS build run from the last 24 hours with identical compiled app inputs
+        required: true
+        type: string
       team_id:
         description: Verified Apple Team ID for the private build upload
         required: true
@@ -51,6 +55,7 @@ jobs:
     timeout-minutes: 45
     env:
       FINMIX_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      FINMIX_UNSIGNED_RUN_ID: ${{ inputs.unsigned_run_id }}
       FINMIX_APPLE_TEAM_ID: ${{ inputs.team_id }}
       FINMIX_PROFILE_UUID: ${{ inputs.profile_uuid }}
       FINMIX_BUILD_NUMBER: ${{ inputs.build_number }}

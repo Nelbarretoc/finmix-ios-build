@@ -36,6 +36,13 @@ SECRET_NAMES = (
     "APP_STORE_CONNECT_KEY_ID",
     "APP_STORE_CONNECT_ISSUER_ID",
 )
+NONCOMPILED_EVIDENCE_PATHS = frozenset({
+    ".github/scripts/ios-app-store.py",
+    ".github/scripts/ios-store-capture.py",
+    ".github/workflows/ios-app-store.yml",
+    ".github/workflows/ios-store-capture.yml",
+    "README.md", "SOURCE_COMMIT", ".gitignore",
+})
 
 
 class ReleaseError(Exception):
@@ -59,6 +66,7 @@ def tool_environment(env=None):
 def config(env):
     rules = {
         "FINMIX_SOURCE_COMMIT": r"[0-9a-f]{40}",
+        "FINMIX_UNSIGNED_RUN_ID": r"[1-9][0-9]{5,19}",
         "FINMIX_APPLE_TEAM_ID": r"[A-Z0-9]{10}",
         "FINMIX_PROFILE_UUID": UUID,
         "FINMIX_BUILD_NUMBER": r"[1-9][0-9]{0,3}",
@@ -89,6 +97,7 @@ def capture(command, label):
 def check_source(cfg):
     require(Path("SOURCE_COMMIT").read_text().strip() == cfg["FINMIX_SOURCE_COMMIT"], "Wrapper does not contain the requested application revision")
     require(capture(["git", "rev-parse", "HEAD"], "Wrapper revision check").decode().strip() == os.environ["GITHUB_SHA"], "Checkout does not match the dispatched wrapper revision")
+    capture(["git", "diff", "--exit-code", "--quiet", "HEAD", "--"], "Tracked release input integrity check")
 
 
 def check_tools(diagnostics=False):
@@ -117,14 +126,66 @@ def check_tools(diagnostics=False):
     require("--entitlements" in manual and "--xml" in manual, "Runner codesign does not document XML entitlement output")
 
 
-def check_unsigned():
+def validate_unsigned_run(run, expected_id, now):
+    require(str(run.get("id")) == expected_id, "Unsigned evidence run ID does not match")
+    require(run.get("repository", {}).get("full_name") == REPOSITORY and run.get("head_repository", {}).get("full_name") == REPOSITORY, "Unsigned evidence belongs to another repository or fork")
+    require(run.get("path") == ".github/workflows/ios-build.yml" and run.get("head_branch") == "main" and run.get("event") in ("push", "workflow_dispatch"), "Unsigned evidence must be the main unsigned workflow, not a pull request")
+    require(run.get("status") == "completed" and run.get("conclusion") == "success", "Selected unsigned workflow has not succeeded")
+    sha = run.get("head_sha", "")
+    require(bool(re.fullmatch(r"[0-9a-f]{40}", sha)), "Unsigned evidence has an invalid wrapper revision")
+    try:
+        created = dt.datetime.fromisoformat(run.get("created_at", "").replace("Z", "+00:00"))
+        age = (now - created).total_seconds()
+    except (TypeError, ValueError):
+        raise ReleaseError("Unsigned evidence has an invalid timestamp") from None
+    require(0 <= age <= 86400, "Unsigned evidence must have started within the last 24 hours")
+    return sha
+
+
+def compiled_inputs(revision):
+    require(bool(re.fullmatch(r"[0-9a-f]{40}", revision)), "Invalid compiled input revision")
+    raw = capture(["git", "ls-tree", "-r", "-z", "--full-tree", revision], "Complete compiled input tree lookup")
+    result = {}
+    for entry in raw.split(b"\0"):
+        if not entry:
+            continue
+        metadata, path = entry.split(b"\t", 1)
+        mode, kind, blob = metadata.decode("ascii").split(" ")
+        path = path.decode("utf-8")
+        require(bool(re.fullmatch(r"[0-7]{6}", mode)) and kind in ("blob", "commit") and bool(re.fullmatch(r"[0-9a-f]{40}", blob)), "Invalid compiled input tree entry")
+        require(path not in result, "Duplicate compiled input path")
+        if path not in NONCOMPILED_EVIDENCE_PATHS:
+            result[path] = (mode, kind, blob)
+    required = {"package.json", "package-lock.json", "capacitor.config.json", ".github/workflows/ios-build.yml", "ios/App/App.xcodeproj/project.pbxproj", "ios/App/App/Info.plist", "dist-native/index.html"}
+    require(required.issubset(result), "Compiled input tree is missing required app or build files")
+    return result
+
+
+def compiled_input_digest(entries):
+    return hashlib.sha256(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
+def compare_compiled_inputs(baseline, current):
+    require(baseline == current, "Compiled application inputs or unsigned workflow differ from the successful evidence run; run the unsigned workflow again")
+    return compiled_input_digest(current)
+
+
+def check_unsigned(cfg):
     token = os.environ.get("GH_TOKEN", "")
     require(bool(token), "GitHub read token is missing")
-    url = f"https://api.github.com/repos/{REPOSITORY}/actions/workflows/ios-build.yml/runs?head_sha={os.environ['GITHUB_SHA']}&status=success&per_page=20"
+    url = f"https://api.github.com/repos/{REPOSITORY}/actions/runs/{cfg['FINMIX_UNSIGNED_RUN_ID']}"
     request = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"})
     with urllib.request.urlopen(request, timeout=30) as response:
-        result = json.load(response)
-    require(any(run.get("head_sha") == os.environ["GITHUB_SHA"] and run.get("head_branch") == "main" and run.get("status") == "completed" and run.get("conclusion") == "success" for run in result.get("workflow_runs", [])), "This exact wrapper revision has no successful unsigned iPhone/iPad workflow")
+        run = json.load(response)
+    baseline = validate_unsigned_run(run, cfg["FINMIX_UNSIGNED_RUN_ID"], dt.datetime.now(dt.timezone.utc))
+    require(not capture(["git", "status", "--porcelain", "--untracked-files=all"], "Release checkout cleanliness check").strip(), "Release checkout has unreviewed changes")
+    if baseline != os.environ["GITHUB_SHA"]:
+        capture(["git", "fetch", "--no-tags", "--depth=1", f"https://github.com/{REPOSITORY}.git", baseline], "Verified unsigned revision fetch")
+    require(capture(["git", "rev-parse", f"{baseline}^{{commit}}"], "Unsigned commit identity check").decode().strip() == baseline, "Fetched unsigned revision does not match")
+    digest = compare_compiled_inputs(compiled_inputs(baseline), compiled_inputs(os.environ["GITHUB_SHA"]))
+    proof = {"runId": cfg["FINMIX_UNSIGNED_RUN_ID"], "baselineWrapperCommit": baseline, "releaseWrapperCommit": os.environ["GITHUB_SHA"], "sourceCommit": cfg["FINMIX_SOURCE_COMMIT"], "compiledInputDigest": digest}
+    (workspace().parent / "finmix-unsigned-evidence.json").write_text(json.dumps(proof) + "\n")
+    return proof
 
 
 def validate_profile(profile, cfg, now):
@@ -234,6 +295,15 @@ def workspace():
     return root / "finmix-app-store-private"
 
 
+def profile_directories():
+    # Xcode 16+ uses Developer/Xcode/UserData; see Apple DTS thread 812538.
+    # Keep the legacy location only for cleanup of an interrupted older helper.
+    return (
+        Path.home() / "Library/Developer/Xcode/UserData/Provisioning Profiles",
+        Path.home() / "Library/MobileDevice/Provisioning Profiles",
+    )
+
+
 def cleanup():
     private = workspace()
     if not private.exists():
@@ -250,11 +320,11 @@ def cleanup():
                 failure = "Interrupted cleanup state; runner teardown still required"
         # Remove only links into this exact temporary workspace, even if the
         # preceding process was interrupted before saving its cleanup metadata.
-        directory = Path.home() / "Library/MobileDevice/Provisioning Profiles"
-        if directory.exists():
-            for link in directory.glob("*.mobileprovision"):
-                if link.is_symlink() and link.resolve() == private / "profile.mobileprovision":
-                    link.unlink()
+        for directory in profile_directories():
+            if directory.exists():
+                for link in directory.glob("*.mobileprovision"):
+                    if link.is_symlink() and link.resolve() == private / "profile.mobileprovision":
+                        link.unlink()
         keychain = private / "signing.keychain-db"
         if keychain.exists():
             subprocess.run(["security", "delete-keychain", str(keychain)], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=tool_environment())
@@ -360,13 +430,16 @@ def release(cfg):
     require(bool(re.fullmatch(r"[A-Z0-9]{10}", key_id)), "Invalid API key ID")
     require(bool(re.fullmatch(UUID, issuer_id)), "Invalid API issuer ID")
     check_source(cfg)
+    evidence = json.loads((workspace().parent / "finmix-unsigned-evidence.json").read_text())
+    require(evidence.get("releaseWrapperCommit") == os.environ["GITHUB_SHA"] and evidence.get("sourceCommit") == cfg["FINMIX_SOURCE_COMMIT"] and evidence.get("runId") == cfg["FINMIX_UNSIGNED_RUN_ID"], "Unsigned build evidence does not match this release")
+    require(evidence.get("compiledInputDigest") == compiled_input_digest(compiled_inputs(os.environ["GITHUB_SHA"])), "Release compiled inputs changed after verification")
     private = workspace()
     require(not private.exists(), "Signing workspace already exists; cleanup is required")
     os.umask(0o077)
     private.mkdir(mode=0o700)
     saved = {}
     result_path = private.parent / "finmix-app-store-result.json"
-    result = {"sourceCommit": cfg["FINMIX_SOURCE_COMMIT"], "wrapperCommit": os.environ["GITHUB_SHA"], "bundleId": BUNDLE_ID, "buildNumber": cfg["FINMIX_BUILD_NUMBER"], "signedVerified": False, "appleValidation": "not_attempted", "upload": "not_attempted", "appStoreAvailable": False}
+    result = {"sourceCommit": cfg["FINMIX_SOURCE_COMMIT"], "wrapperCommit": os.environ["GITHUB_SHA"], "bundleId": BUNDLE_ID, "buildNumber": cfg["FINMIX_BUILD_NUMBER"], "unsignedEvidence": evidence, "signedVerified": False, "appleValidation": "not_attempted", "upload": "not_attempted", "appStoreAvailable": False}
 
     def record():
         result_path.write_text(json.dumps(result, indent=2) + "\n")
@@ -409,7 +482,7 @@ def release(cfg):
         run_private(["security", "set-key-partition-list", "-S", "apple-tool:,apple:,codesign:", "-s", "-k", password, str(keychain)], "keychain-partitions", private)
         run_private(["security", "list-keychains", "-d", "user", "-s", str(keychain), *saved["previous_keychains"]], "keychain-search", private)
         identity = select_identity(capture(["security", "find-identity", "-v", "-p", "codesigning", str(keychain)], "Signing identity check").decode(), allowed, cfg["FINMIX_APPLE_TEAM_ID"])
-        profile_dir = Path.home() / "Library/MobileDevice/Provisioning Profiles"
+        profile_dir = profile_directories()[0]
         profile_dir.mkdir(parents=True, exist_ok=True)
         profile_link = profile_dir / f"{profile['UUID']}.mobileprovision"
         require(not profile_link.exists() and not profile_link.is_symlink(), "Provisioning profile already exists on this runner")
@@ -472,9 +545,9 @@ def main():
         cfg = config(os.environ)
         if command == "check":
             check_source(cfg)
-            check_unsigned()
+            evidence = check_unsigned(cfg)
             check_tools()
-            print("Reviewed source, matching unsigned workflow and Apple tooling verified.")
+            print(f"Reviewed source, equivalent compiled inputs from unsigned run {evidence['runId']}, and Apple tooling verified.")
         elif command == "release":
             release(cfg)
         else:

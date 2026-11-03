@@ -176,7 +176,9 @@ def wait_status(path, expected, timeout=80, phase="native readiness"):
     while time.monotonic() < deadline:
         try:
             value = json.loads(path.read_text())
-            require(value.get("state") != "failed", f"{phase} failed")
+            detail = value.get("phase")
+            suffix = f" ({detail})" if detail in {"authentication", "fixture", "document", "preferences", "navigation", "page"} else ""
+            require(value.get("state") != "failed", f"{phase} failed{suffix}")
             if all(value.get(key) == item for key, item in expected.items()):
                 return value
         except (OSError, json.JSONDecodeError):
