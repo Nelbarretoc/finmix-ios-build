@@ -31,7 +31,10 @@ jobs:
       - run: npm ci
       - run: npx cap sync ios
       - name: Show the Xcode version and project schemes
-        run: xcodebuild -version && xcodebuild -list -project ios/App/App.xcodeproj
+        run: |
+          xcodebuild -version
+          xcodebuild -list -project ios/App/App.xcodeproj
+          python3 .github/scripts/ios-app-store.py tools
       - name: Compile for the iOS simulator (unsigned)
         run: |
           xcodebuild -project ios/App/App.xcodeproj -scheme App \

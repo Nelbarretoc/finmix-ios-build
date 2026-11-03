@@ -1,0 +1,111 @@
+# Generated into the approved public wrapper repository. Manual only.
+# Credentials remain in GitHub secrets and ephemeral runner files, never artifacts.
+# Upload acceptance means processing in App Store Connect, not public availability.
+name: iOS App Store upload
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Exact reviewed private application commit (40 hexadecimal characters)
+        required: true
+        type: string
+      team_id:
+        description: Verified organization Apple Team ID
+        required: true
+        type: string
+      profile_uuid:
+        description: UUID of the matching App Store distribution provisioning profile
+        required: true
+        type: string
+      build_number:
+        description: Unused positive build number (1–9999)
+        required: true
+        type: string
+      app_apple_id:
+        description: Numeric Apple ID of the existing FinMix App Store Connect record
+        required: true
+        type: string
+      asc_public_id:
+        description: Verified App Store Connect provider public ID (UUID)
+        required: true
+        type: string
+      upload:
+        description: Upload after signing, export and Apple validation; otherwise validate only
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ios-app-store-upload
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 45
+    env:
+      FINMIX_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      FINMIX_APPLE_TEAM_ID: ${{ inputs.team_id }}
+      FINMIX_PROFILE_UUID: ${{ inputs.profile_uuid }}
+      FINMIX_BUILD_NUMBER: ${{ inputs.build_number }}
+      FINMIX_APP_APPLE_ID: ${{ inputs.app_apple_id }}
+      FINMIX_ASC_PUBLIC_ID: ${{ inputs.asc_public_id }}
+      FINMIX_UPLOAD: ${{ inputs.upload }}
+    steps:
+      - name: Require existing signing and upload credentials before setup
+        env:
+          APPLE_DISTRIBUTION_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_P12_BASE64 }}
+          APPLE_DISTRIBUTION_P12_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_P12_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in APPLE_DISTRIBUTION_P12_BASE64 APPLE_DISTRIBUTION_P12_PASSWORD APPLE_PROVISIONING_PROFILE_BASE64 APP_STORE_CONNECT_API_KEY_BASE64 APP_STORE_CONNECT_KEY_ID APP_STORE_CONNECT_ISSUER_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required existing GitHub secret is missing: $name"
+              exit 1
+            fi
+          done
+      - uses: actions/checkout@v4
+        id: checkout
+        with:
+          persist-credentials: false
+      - name: Check reviewed source, successful unsigned build and Apple tooling
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 .github/scripts/ios-app-store.py check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npx --no-install cap sync ios
+      - name: Sign, verify, export and optionally upload
+        env:
+          APPLE_DISTRIBUTION_P12_BASE64: ${{ secrets.APPLE_DISTRIBUTION_P12_BASE64 }}
+          APPLE_DISTRIBUTION_P12_PASSWORD: ${{ secrets.APPLE_DISTRIBUTION_P12_PASSWORD }}
+          APPLE_PROVISIONING_PROFILE_BASE64: ${{ secrets.APPLE_PROVISIONING_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_API_KEY_BASE64: ${{ secrets.APP_STORE_CONNECT_API_KEY_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+        run: python3 .github/scripts/ios-app-store.py release
+      - name: Preserve non-secret verification result only
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: FinMix-app-store-result
+          path: ${{ runner.temp }}/finmix-app-store-result.json
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove any interrupted signing workspace
+        if: always() && steps.checkout.outcome == 'success'
+        run: python3 .github/scripts/ios-app-store.py cleanup
