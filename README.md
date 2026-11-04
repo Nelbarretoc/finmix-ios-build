@@ -1,6 +1,6 @@
 # FinMix iPhone build
 
-Generated from the private FinMix repository (source commit `32518ba6f99db3965db3c083f3d18e3ed34566b8`)
+Generated from the private FinMix repository (source commit `88b014106bf58f70e2fe56386e85a778c5b3ad59`)
 by `scripts/publish-ios-shell.sh`. It holds the Xcode wrapper, compiled native
 web bundle, and build/release tooling so the iPhone app can be built on GitHub's
 free macOS runners. Do not edit files here; changes are overwritten.
