@@ -51,7 +51,7 @@ concurrency:
 jobs:
   release:
     if: github.ref == 'refs/heads/main'
-    runs-on: macos-26
+    runs-on: macos-26-intel
     timeout-minutes: 45
     env:
       FINMIX_SOURCE_COMMIT: ${{ inputs.source_commit }}
