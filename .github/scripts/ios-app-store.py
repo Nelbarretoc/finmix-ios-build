@@ -375,7 +375,7 @@ def verify_release_executable(app, info):
     executable = app / name
     require(executable.is_file() and not executable.is_symlink(), "Signed app executable is missing or linked")
     content = executable.read_bytes()
-    require(all(marker not in content for marker in (b"FINMIX_DEBUG_CAPTURE_HARNESS_V1", b"NativeCaptureHarness")), "Signed app contains a debug capture harness")
+    require(all(marker not in content for marker in (b"FINMIX_DEBUG_CAPTURE_HARNESS_V1", b"NativeCaptureHarness", b"FINMIX_DEBUG_FEATURE_SMOKE_V1", b"NativeFeatureSmokeHarness")), "Signed app contains a debug capture harness")
 
 
 def verify_photo_permissions(app, info):
