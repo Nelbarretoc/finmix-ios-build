@@ -21,7 +21,7 @@ spec.loader.exec_module(simulator)
 MARKER = "FINMIX_DEBUG_FEATURE_SMOKE_V1"
 CHECKS = (
     "bridgeReady", "englishPhotoRead", "spanishPhotoRead", "exifRotatedPhotoRead",
-    "invalidInputsRejected", "protectedShareFileMatches", "shareSheetPresented",
+    "invalidInputsRejected", "shareFileMatches", "shareSheetPresented",
     "duplicateShareRejected", "cancelReturnsFalseAndCleans", "retryAndErrorCleanup",
 )
 PHASES = {"bridge", "english-photo", "spanish-photo", "rotated-photo", "invalid-inputs",
@@ -34,8 +34,10 @@ def validate_proof(value):
     simulator.require(value.get("state") == "passed" and value.get("phase") == "complete", "Native bridge checks did not finish")
     simulator.require(all(value.get(key) is True for key in CHECKS), "A required native bridge check did not pass")
     simulator.require(value.get("originalHandwritingVerified") is False and value.get("saveToFilesVerified") is False
+                      and value.get("fileProtectionOnLockedDeviceVerified") is False
                       and value.get("completionCallbacks") == "simulated", "Native bridge proof overstates physical acceptance")
-    return {key: value[key] for key in (*CHECKS, "originalHandwritingVerified", "saveToFilesVerified", "completionCallbacks")}
+    simulator.require(value.get("fileProtectionAttributeStatus") in {"not-reported", "complete-reported"}, "Native file protection status is unknown")
+    return {key: value[key] for key in (*CHECKS, "originalHandwritingVerified", "saveToFilesVerified", "fileProtectionOnLockedDeviceVerified", "fileProtectionAttributeStatus", "completionCallbacks")}
 
 
 def read_status(path, allow_failure=False):
@@ -54,7 +56,7 @@ def read_status(path, allow_failure=False):
 def failure_proof(value):
     result = {key: value[key] for key in CHECKS if value.get(key) is True}
     result["phase"] = value["phase"]
-    for key in ("rootControllerClass", "presentedControllerClass", "fileProtection", "shareCallState"):
+    for key in ("rootControllerClass", "presentedControllerClass", "fileProtection", "fileProtectionAttributeStatus", "shareCallState"):
         text = value.get(key)
         if isinstance(text, str) and re.fullmatch(r'[A-Za-z0-9_.: ()"]{1,120}', text):
             result[key] = text

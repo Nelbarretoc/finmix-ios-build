@@ -109,7 +109,9 @@ final class NativeFeatureSmokeHarness {
         // framework callback. This does not claim a user saved anything to Files.
         let callback = sheet.completionWithItemsHandler
         sheet.completionWithItemsHandler = nil
-        sheet.dismiss(animated: false)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            sheet.dismiss(animated: false) { continuation.resume() }
+        }
         callback?(nil, false, nil, failed ? NSError(domain: "FinMixFictionalSmoke", code: 1) : nil)
         for _ in 0..<40 {
             let result = try await js("return window.__finmixFeatureShare;") as? [String: Any]
@@ -130,6 +132,7 @@ final class NativeFeatureSmokeHarness {
         value["harness"] = Self.sentinel
         value["originalHandwritingVerified"] = false
         value["saveToFilesVerified"] = false
+        value["fileProtectionOnLockedDeviceVerified"] = false
         value["completionCallbacks"] = "simulated"
         if let bytes = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) {
             try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -176,12 +179,19 @@ final class NativeFeatureSmokeHarness {
             // https://developer.apple.com/documentation/foundation/fileattributekey/protectionkey
             let protection = (attributes[.protectionKey] as? FileProtectionType)?.rawValue
                 ?? (attributes[.protectionKey] as? String)
-            try require(protection == FileProtectionType.complete.rawValue)
+            if attributes[.protectionKey] != nil {
+                try require(protection == FileProtectionType.complete.rawValue)
+            }
+            // The iOS 26.5 runner did not return this attribute. Do not turn
+            // absence into a protection PASS; locked-device protection remains
+            // an explicit physical-device acceptance requirement.
+            proof["fileProtectionAttributeStatus"] = attributes[.protectionKey] == nil
+                ? "not-reported" : "complete-reported"
             phase = "share-anchor"
             if UIDevice.current.userInterfaceIdiom == .pad {
                 try require(sheet.popoverPresentationController?.sourceView != nil)
             }
-            proof["protectedShareFileMatches"] = true
+            proof["shareFileMatches"] = true
             phase = "share-busy"
             let busyRejected = try await js("""
             try {await window.Capacitor.nativePromise('ChecklistExport','share',{filename:'finmix-taxes-2025.txt',text:'fictional'}); return false;}
