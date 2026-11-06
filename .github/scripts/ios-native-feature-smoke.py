@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import plistlib
+import re
 import signal
 import struct
 import sys
@@ -24,7 +25,8 @@ CHECKS = (
     "duplicateShareRejected", "cancelReturnsFalseAndCleans", "retryAndErrorCleanup",
 )
 PHASES = {"bridge", "english-photo", "spanish-photo", "rotated-photo", "invalid-inputs",
-          "share-presentation", "cancel-cleanup", "error-cleanup", "complete"}
+          "share-presentation", "share-file", "share-protection", "share-anchor", "share-busy",
+          "cancel-cleanup", "error-cleanup", "complete"}
 
 
 def validate_proof(value):
@@ -36,7 +38,7 @@ def validate_proof(value):
     return {key: value[key] for key in (*CHECKS, "originalHandwritingVerified", "saveToFilesVerified", "completionCallbacks")}
 
 
-def read_status(path):
+def read_status(path, allow_failure=False):
     try:
         value = json.loads(path.read_text())
     except (OSError, json.JSONDecodeError):
@@ -44,8 +46,21 @@ def read_status(path):
     simulator.require(isinstance(value, dict) and value.get("harness") == MARKER, "Unexpected native bridge status")
     phase = value.get("phase")
     simulator.require(phase in PHASES, "Unknown native bridge phase")
-    simulator.require(value.get("state") != "failed", f"Native bridge failed at {phase}")
+    if not allow_failure:
+        simulator.require(value.get("state") != "failed", f"Native bridge failed at {phase}")
     return value
+
+
+def failure_proof(value):
+    result = {key: value[key] for key in CHECKS if value.get(key) is True}
+    result["phase"] = value["phase"]
+    for key in ("rootControllerClass", "presentedControllerClass", "fileProtection", "shareCallState"):
+        text = value.get(key)
+        if isinstance(text, str) and re.fullmatch(r'[A-Za-z0-9_.: ()"]{1,120}', text):
+            result[key] = text
+    if isinstance(value.get("windowAttached"), bool):
+        result["windowAttached"] = value["windowAttached"]
+    return result
 
 
 def check(app, output, family):
@@ -79,8 +94,21 @@ def check(app, output, family):
         deadline = time.monotonic() + 240
         last_phase = None
         while time.monotonic() < deadline:
-            value = read_status(directory / "status.json")
+            value = read_status(directory / "status.json", allow_failure=True)
             if value is not None:
+                if value.get("state") == "failed":
+                    detail = failure_proof(value)
+                    receipt = {"status": "FAIL", "checkedAtUtc": dt.datetime.now(dt.timezone.utc).isoformat(),
+                               "family": family, "device": device["name"], "runtime": runtime["identifier"],
+                               "partialChecks": detail, "originalHandwritingVerified": False, "saveToFilesVerified": False}
+                    (output / "result.json").write_text(json.dumps(receipt, indent=2) + "\n")
+                    simulator.log("Native bridge failure evidence: " + json.dumps(detail))
+                    try:
+                        simulator.tool(["xcrun", "simctl", "io", udid, "screenshot", str(output / "failure.png")],
+                                       f"{label} fictional failure screenshot", timeout=30)
+                    except simulator.SmokeError:
+                        simulator.log(f"{label} failure screenshot unavailable")
+                    raise simulator.SmokeError(f"Native bridge failed at {value['phase']}")
                 if value["phase"] != last_phase:
                     last_phase = value["phase"]
                     simulator.log(f"{label} native bridge phase: {last_phase}")
@@ -95,7 +123,7 @@ def check(app, output, family):
                 if value.get("state") == "passed":
                     proof = validate_proof(value)
                     simulator.require(captured, "Actual share-sheet screenshot is missing")
-                    receipt = {"checkedAtUtc": dt.datetime.now(dt.timezone.utc).isoformat(), "family": family,
+                    receipt = {"status": "PASS", "checkedAtUtc": dt.datetime.now(dt.timezone.utc).isoformat(), "family": family,
                                "device": device["name"], "runtime": runtime["identifier"], "checks": proof,
                                "screenshot": screenshot.name, "width": width, "height": height,
                                "configuration": "Debug simulator; exact production plugin source with debug-only driver",

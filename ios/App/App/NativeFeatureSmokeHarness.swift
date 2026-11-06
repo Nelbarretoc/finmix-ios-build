@@ -91,6 +91,16 @@ final class NativeFeatureSmokeHarness {
                !sheet.isBeingPresented { return sheet }
             try await Task.sleep(nanoseconds: 250_000_000)
         }
+        proof["windowAttached"] = webView?.window != nil
+        if let root = webView?.window?.rootViewController {
+            proof["rootControllerClass"] = String(describing: type(of: root))
+            if let presented = root.presentedViewController {
+                proof["presentedControllerClass"] = String(describing: type(of: presented))
+            }
+        }
+        if let value = try await js("return window.__finmixFeatureShare;") as? [String: Any] {
+            proof["shareCallState"] = value["state"] as? String
+        }
         throw SmokeError.failed
     }
 
@@ -154,15 +164,25 @@ final class NativeFeatureSmokeHarness {
             try require(rejected as? Bool == true); proof["invalidInputsRejected"] = true
             phase = "share-presentation"
             let sheet = try await beginShare()
+            proof["shareSheetPresented"] = true
+            phase = "share-file"
             let file = shareRoot.appendingPathComponent("finmix-taxes-2025.txt")
             try require(try String(contentsOf: file, encoding: .utf8) == "FinMix fictional checklist\nNo real tax or identity data.")
+            phase = "share-protection"
             let attributes = try FileManager.default.attributesOfItem(atPath: file.path)
-            try require(attributes[.protectionKey] as? FileProtectionType == .complete)
+            proof["fileProtection"] = String(describing: attributes[.protectionKey] ?? "missing")
+            // Foundation documents this dictionary value as NSString. Accept
+            // either bridge representation, while requiring the same value.
+            // https://developer.apple.com/documentation/foundation/fileattributekey/protectionkey
+            let protection = (attributes[.protectionKey] as? FileProtectionType)?.rawValue
+                ?? (attributes[.protectionKey] as? String)
+            try require(protection == FileProtectionType.complete.rawValue)
+            phase = "share-anchor"
             if UIDevice.current.userInterfaceIdiom == .pad {
                 try require(sheet.popoverPresentationController?.sourceView != nil)
             }
             proof["protectedShareFileMatches"] = true
-            proof["shareSheetPresented"] = true
+            phase = "share-busy"
             let busyRejected = try await js("""
             try {await window.Capacitor.nativePromise('ChecklistExport','share',{filename:'finmix-taxes-2025.txt',text:'fictional'}); return false;}
             catch(e) {return e.message==='CHECKLIST_EXPORT_UNAVAILABLE';}

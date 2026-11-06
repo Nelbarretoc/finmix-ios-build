@@ -88,6 +88,7 @@ jobs:
           cd build/ios/Build/Products/Release-iphonesimulator
           zip -qry "$GITHUB_WORKSPACE/FinMix-simulator.zip" App.app
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: FinMix-ios-simulator
           path: |
@@ -96,6 +97,8 @@ jobs:
             FinMix-iPad-launch.png
             FinMix-native-features-iphone/result.json
             FinMix-native-features-iphone/share-sheet.png
+            FinMix-native-features-iphone/failure.png
             FinMix-native-features-ipad/result.json
             FinMix-native-features-ipad/share-sheet.png
+            FinMix-native-features-ipad/failure.png
           retention-days: 14
