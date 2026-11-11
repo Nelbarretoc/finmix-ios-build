@@ -7,7 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		F17F6A000000000000000001 /* NativeFeatureSmokeHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17F6A000000000000000002 /* NativeFeatureSmokeHarness.swift */; };
+		F17A11000000000000000001 /* SubscriptionPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17A11000000000000000002 /* SubscriptionPlugin.swift */; };
 		F17F2B000000000000000001 /* InfoPlist.strings in Resources */ = {isa = PBXBuildFile; fileRef = F17F2B000000000000000002 /* InfoPlist.strings */; };
 		F17C4A000000000000000001 /* NativeCaptureHarness.swift in Sources */ = {isa = PBXBuildFile; fileRef = F17C4A000000000000000002 /* NativeCaptureHarness.swift */; };
 		F17F1A000000000000000001 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = F17F1A000000000000000002 /* PrivacyInfo.xcprivacy */; };
@@ -24,7 +24,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
-		F17F6A000000000000000002 /* NativeFeatureSmokeHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeFeatureSmokeHarness.swift; sourceTree = "<group>"; };
+		F17A11000000000000000002 /* SubscriptionPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionPlugin.swift; sourceTree = "<group>"; };
 		F17F2B000000000000000003 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		F17F2B000000000000000004 /* es */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = es; path = es.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		F17C4A000000000000000002 /* NativeCaptureHarness.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeCaptureHarness.swift; sourceTree = "<group>"; };
@@ -77,8 +77,8 @@
 			children = (
 				9582B6822FE993A50072D4E8 /* SceneDelegate.swift */,
 				B411D1A00000000000000002 /* BankBrowserPlugin.swift */,
+				F17A11000000000000000002 /* SubscriptionPlugin.swift */,
 				F17C4A000000000000000002 /* NativeCaptureHarness.swift */,
-				F17F6A000000000000000002 /* NativeFeatureSmokeHarness.swift */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
@@ -180,8 +180,8 @@
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				9582B6832FE993A70072D4E8 /* SceneDelegate.swift in Sources */,
 				B411D1A00000000000000001 /* BankBrowserPlugin.swift in Sources */,
+				F17A11000000000000000001 /* SubscriptionPlugin.swift in Sources */,
 				F17C4A000000000000000001 /* NativeCaptureHarness.swift in Sources */,
-				F17F6A000000000000000001 /* NativeFeatureSmokeHarness.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

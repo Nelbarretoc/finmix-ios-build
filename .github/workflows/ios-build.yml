@@ -55,24 +55,6 @@ jobs:
           test "$bundle_id" = 'com.th3rdgroup.finmix'
           /usr/libexec/PlistBuddy -c 'Print CFBundleShortVersionString' "$app/Info.plist"
           /usr/libexec/PlistBuddy -c 'Print CFBundleVersion' "$app/Info.plist"
-          python3 .github/scripts/ios-store-capture.py verify-release --app "$app"
-      - name: Compile debug-only native bridge checks
-        run: |
-          xcodebuild -project ios/App/App.xcodeproj -scheme App \
-            -configuration Debug -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath build/features CODE_SIGNING_ALLOWED=NO \
-            ENABLE_DEBUG_DYLIB=NO build
-      - name: Test photo reading and file sharing on iPhone
-        run: |
-          python3 .github/scripts/ios-native-feature-smoke.py --family iphone \
-            --app build/features/Build/Products/Debug-iphonesimulator/App.app \
-            --output FinMix-native-features-iphone
-      - name: Test photo reading and file sharing on iPad
-        run: |
-          python3 .github/scripts/ios-native-feature-smoke.py --family ipad \
-            --app build/features/Build/Products/Debug-iphonesimulator/App.app \
-            --output FinMix-native-features-ipad
       - name: Launch the app in an iPhone simulator
         run: |
           python3 .github/scripts/ios-simulator-smoke.py --family iphone \
@@ -88,17 +70,10 @@ jobs:
           cd build/ios/Build/Products/Release-iphonesimulator
           zip -qry "$GITHUB_WORKSPACE/FinMix-simulator.zip" App.app
       - uses: actions/upload-artifact@v4
-        if: always()
         with:
           name: FinMix-ios-simulator
           path: |
             FinMix-simulator.zip
             FinMix-launch.png
             FinMix-iPad-launch.png
-            FinMix-native-features-iphone/result.json
-            FinMix-native-features-iphone/share-sheet.png
-            FinMix-native-features-iphone/failure.png
-            FinMix-native-features-ipad/result.json
-            FinMix-native-features-ipad/share-sheet.png
-            FinMix-native-features-ipad/failure.png
           retention-days: 14

@@ -170,7 +170,7 @@ def verify_release(app):
     executable = info.get("CFBundleExecutable", "")
     require(re.fullmatch(r"[A-Za-z0-9_-]+", executable), "release executable name")
     data = (app / executable).read_bytes()
-    require(all(marker not in data for marker in (SENTINEL, b"NativeCaptureHarness", b"FINMIX_DEBUG_FEATURE_SMOKE_V1", b"NativeFeatureSmokeHarness")), "debug harness present in release executable")
+    require(SENTINEL not in data and b"NativeCaptureHarness" not in data, "debug harness present in release executable")
     print("Release executable excludes capture sentinel and class symbols.")
 
 

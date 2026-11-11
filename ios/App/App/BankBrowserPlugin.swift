@@ -12,6 +12,7 @@ class AlDiaBridgeViewController: CAPBridgeViewController {
         bridge?.registerPluginInstance(BankBrowserPlugin())
         bridge?.registerPluginInstance(ChecklistExportPlugin())
         bridge?.registerPluginInstance(AppointmentReaderPlugin())
+        bridge?.registerPluginInstance(SubscriptionPlugin())
 #if DEBUG && targetEnvironment(simulator)
         if let webView = bridge?.webView {
             nativeCapture = NativeCaptureHarness(webView: webView)

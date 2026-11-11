@@ -18,7 +18,6 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
     private var expectedActor = ""
     private var expectedFixture = ""
     private var taxYear = 0
-    private var featureSmoke: NativeFeatureSmokeHarness?
 
     init(webView: WKWebView) {
         self.webView = webView
@@ -42,12 +41,6 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
     }
 
     func start() {
-        if ProcessInfo.processInfo.environment["FINMIX_NATIVE_FEATURE_SMOKE"] == "1",
-           let webView = webView {
-            featureSmoke = NativeFeatureSmokeHarness(webView: webView)
-            featureSmoke?.start()
-            return
-        }
         let credentials = directory.appendingPathComponent("private.json")
         guard FileManager.default.fileExists(atPath: credentials.path) else { return }
         Task {
