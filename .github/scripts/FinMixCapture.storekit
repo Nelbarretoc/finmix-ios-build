@@ -1,0 +1,87 @@
+{
+  "identifier": "F1A11113",
+  "nonRenewingSubscriptions": [],
+  "products": [],
+  "settings": {
+    "_failTransactionsEnabled": false,
+    "_locale": "en_US",
+    "_storefront": "USA",
+    "_storeKitErrors": []
+  },
+  "subscriptionGroups": [
+    {
+      "id": "22568562",
+      "localizations": [],
+      "name": "FinMix memberships",
+      "subscriptions": [
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "9.99",
+          "familyShareable": false,
+          "groupNumber": 3,
+          "internalID": "10000001",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Up to 25 active recurring bills and tasks.",
+              "displayName": "FinMix Essential",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.th3rdgroup.finmix.essential.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "FinMix Essential monthly",
+          "subscriptionGroupID": "22568562",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "15.99",
+          "familyShareable": false,
+          "groupNumber": 2,
+          "internalID": "10000002",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Up to 50 active recurring bills and tasks.",
+              "displayName": "FinMix Plus",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.th3rdgroup.finmix.plus.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "FinMix Plus monthly",
+          "subscriptionGroupID": "22568562",
+          "type": "RecurringSubscription"
+        },
+        {
+          "adHocOffers": [],
+          "codeOffers": [],
+          "displayPrice": "19.99",
+          "familyShareable": false,
+          "groupNumber": 1,
+          "internalID": "10000003",
+          "introductoryOffer": null,
+          "localizations": [
+            {
+              "description": "Up to 75 active recurring bills and tasks.",
+              "displayName": "FinMix Complete",
+              "locale": "en_US"
+            }
+          ],
+          "productID": "com.th3rdgroup.finmix.complete.monthly",
+          "recurringSubscriptionPeriod": "P1M",
+          "referenceName": "FinMix Complete monthly",
+          "subscriptionGroupID": "22568562",
+          "type": "RecurringSubscription"
+        }
+      ]
+    }
+  ],
+  "version": {
+    "major": 3,
+    "minor": 0
+  }
+}

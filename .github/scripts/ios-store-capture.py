@@ -170,7 +170,7 @@ def verify_release(app):
     executable = info.get("CFBundleExecutable", "")
     require(re.fullmatch(r"[A-Za-z0-9_-]+", executable), "release executable name")
     data = (app / executable).read_bytes()
-    require(SENTINEL not in data and b"NativeCaptureHarness" not in data, "debug harness present in release executable")
+    require(SENTINEL not in data and b"NativeCaptureHarness" not in data and b"SKTestSession" not in data, "debug harness present in release executable")
     print("Release executable excludes capture sentinel and class symbols.")
 
 
@@ -180,7 +180,7 @@ def wait_status(path, expected, timeout=80, phase="native readiness"):
         try:
             value = json.loads(path.read_text())
             detail = value.get("phase")
-            suffix = f" ({detail})" if detail in {"authentication", "fixture", "document", "preferences", "navigation", "page"} else ""
+            suffix = f" ({detail})" if detail in {"authentication", "fixture", "document", "preferences", "navigation", "page", "storekit"} else ""
             require(value.get("state") != "failed", f"{phase} failed{suffix}")
             if all(value.get(key) == item for key, item in expected.items()):
                 return value
@@ -215,7 +215,7 @@ def cleanup_simulator(device, label, directory):
             print(f"Capture warning: {label} simulator {operation} cleanup failed", file=sys.stderr)
 
 
-def capture(app, output):
+def capture(app, output, membership_only=False):
     require(sys.platform == "darwin", "capture requires existing macOS runner")
     require(os.environ.get("GITHUB_REPOSITORY") == "Nelbarretoc/finmix-ios-build" and os.environ.get("GITHUB_EVENT_NAME") == "workflow_dispatch" and os.environ.get("GITHUB_REF") == "refs/heads/main", "capture dispatch scope")
     source = Path("SOURCE_COMMIT").read_text().strip()
@@ -223,6 +223,12 @@ def capture(app, output):
     app = Path(app).resolve()
     info = plistlib.loads((app / "Info.plist").read_bytes())
     require(info.get("CFBundleIdentifier") == BUNDLE and SENTINEL in (app / info["CFBundleExecutable"]).read_bytes(), "debug capture app")
+    routes = ("membership",) if membership_only else ROUTES
+    plans_to_capture = ("essential", "plus", "complete") if membership_only else (None,)
+    if membership_only:
+        configuration = Path(__file__).with_name("FinMixCapture.storekit")
+        require(configuration.is_file(), "local StoreKit configuration")
+        shutil.copyfile(configuration, app / "FinMixCapture.storekit")
     private = Path(os.environ["RUNNER_TEMP"]) / "finmix-capture/private.json"
     payload = private.read_bytes()
     output = Path(output).resolve()
@@ -266,27 +272,36 @@ def capture(app, output):
                 wait_status(directory / "status.json", {"state": "authenticated"}, phase=f"{label} reviewer authentication")
                 require(not (directory / "private.json").exists(), "private input not consumed")
                 for language in ("en", "es"):
-                    for route in ROUTES:
-                        print(f"Capture phase: {label} / {language} / {route}", flush=True)
-                        command = {"id": uuid.uuid4().hex, "route": route, "language": language}
-                        private_write(directory / "command.next", json.dumps(command).encode())
-                        (directory / "command.next").replace(directory / "command.json")
-                        wait_status(directory / "status.json", {"state": "ready", **command}, phase=f"{label} {language} {route} readiness")
-                        filename = f"{label}-{language}-{route}.jpg"
-                        temporary = directory / "capture.png"
-                        tool(["xcrun", "simctl", "io", device, "screenshot", "--type=png", str(temporary)])
-                        tool(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "95", str(temporary), "--out", str(output / filename)])
-                        temporary.unlink()
-                        size = tool(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(output / filename)])
-                        actual = tuple(int(re.search(key + r": (\d+)", size).group(1)) for key in ("pixelWidth", "pixelHeight"))
-                        require(actual == dimensions, "native screenshot dimensions")
-                        captures.append({"file": filename, "language": language, "route": route, "width": actual[0], "height": actual[1], "sha256": hashlib.sha256((output / filename).read_bytes()).hexdigest()})
+                    for route in routes:
+                        for plan in plans_to_capture:
+                            print(f"Capture phase: {label} / {language} / {route}", flush=True)
+                            command = {"id": uuid.uuid4().hex, "route": route, "language": language}
+                            if plan:
+                                command["plan"] = plan
+                            private_write(directory / "command.next", json.dumps(command).encode())
+                            (directory / "command.next").replace(directory / "command.json")
+                            wait_status(directory / "status.json", {"state": "ready", **command}, phase=f"{label} {language} {route} readiness")
+                            suffix = f"-{plan}" if plan else ""
+                            filename = f"{label}-{language}-{route}{suffix}.jpg"
+                            temporary = directory / "capture.png"
+                            tool(["xcrun", "simctl", "io", device, "screenshot", "--type=png", str(temporary)])
+                            tool(["sips", "-s", "format", "jpeg", "-s", "formatOptions", "95", str(temporary), "--out", str(output / filename)])
+                            temporary.unlink()
+                            size = tool(["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(output / filename)])
+                            actual = tuple(int(re.search(key + r": (\d+)", size).group(1)) for key in ("pixelWidth", "pixelHeight"))
+                            require(actual == dimensions, "native screenshot dimensions")
+                            captures.append({"file": filename, "language": language, "route": route, "plan": plan, "width": actual[0], "height": actual[1], "sha256": hashlib.sha256((output / filename).read_bytes()).hexdigest()})
             finally:
                 cleanup_simulator(device, label, directory)
-        require(len(captures) == 24, "complete native screenshot set")
+        expected_count = 12 if membership_only else 24
+        require(len(captures) == expected_count, "complete native screenshot set")
         manifest = {"sourceCommit": source, "capturedAt": dt.datetime.now(dt.timezone.utc).isoformat(), "source": "Actual iOS simulator app, bundled production UI and authenticated fictional reviewer", "configuration": "Debug simulator; capture harness excluded from Release", "physicalDeviceAcceptance": False, "readyForVisualReview": True, "captures": captures}
+        if membership_only:
+            manifest["purchaseEnvironment"] = "Apple local StoreKit Testing configuration"
+            manifest["realSandboxTransactionsTested"] = False
+            manifest["storeKitConfigurationSha256"] = hashlib.sha256(configuration.read_bytes()).hexdigest()
         (output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-        print("24 native screenshots captured; visual review remains required.")
+        print(f"{expected_count} native screenshots captured; visual review remains required.")
     except Exception:
         shutil.rmtree(output, ignore_errors=True)
         raise
@@ -305,6 +320,7 @@ if __name__ == "__main__":
     run = sub.add_parser("capture")
     run.add_argument("--app", required=True)
     run.add_argument("--output", required=True)
+    run.add_argument("--membership-only", action="store_true")
     check = sub.add_parser("verify-release")
     check.add_argument("--app", required=True)
     args = parser.parse_args()
@@ -312,7 +328,7 @@ if __name__ == "__main__":
         if args.command == "prepare": prepare(args.reviewer, args.output)
         elif args.command == "bootstrap": bootstrap()
         elif args.command == "check-canonical": check_canonical()
-        elif args.command == "capture": capture(args.app, args.output)
+        elif args.command == "capture": capture(args.app, args.output, args.membership_only)
         else: verify_release(args.app)
     except Exception as error:
         print("Capture stopped: " + (str(error) if isinstance(error, CaptureError) else "private operation failed"), file=sys.stderr)

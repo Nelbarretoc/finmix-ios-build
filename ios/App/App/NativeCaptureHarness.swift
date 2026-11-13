@@ -2,6 +2,8 @@
 import Foundation
 import CryptoKit
 import WebKit
+import StoreKit
+import StoreKitTest
 
 // Never compiled into a device or Release binary. This is an authenticated
 // screenshot driver, not a fixture API or a replacement for native sign-in tests.
@@ -18,6 +20,7 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
     private var expectedActor = ""
     private var expectedFixture = ""
     private var taxYear = 0
+    private var storeKitSession: SKTestSession?
 
     init(webView: WKWebView) {
         self.webView = webView
@@ -128,7 +131,7 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
               let input = try? JSONSerialization.jsonObject(with: bytes) as? [String: String],
               let id = input["id"], id != lastCommand,
               id.range(of: "^[a-z0-9-]{1,60}$", options: .regularExpression) != nil,
-              let route = input["route"], ["home", "bills", "calendar", "tell", "money", "taxes", "finish"].contains(route),
+              let route = input["route"], ["home", "bills", "calendar", "tell", "money", "taxes", "membership", "finish"].contains(route),
               let language = input["language"], ["en", "es"].contains(language) else { return }
         busy = true
         lastCommand = id
@@ -143,6 +146,25 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
                     return
                 }
                 try await verifyFixture()
+                if route == "membership" && storeKitSession == nil {
+                    phase = "storekit"
+                    guard let file = Bundle.main.url(forResource: "FinMixCapture", withExtension: "storekit") else {
+                        throw CaptureError.invalid
+                    }
+                    storeKitSession = try SKTestSession(contentsOf: file)
+                    storeKitSession?.disableDialogs = true
+                    let identifiers = [
+                        "com.th3rdgroup.finmix.essential.monthly",
+                        "com.th3rdgroup.finmix.plus.monthly",
+                        "com.th3rdgroup.finmix.complete.monthly"
+                    ]
+                    let products = try await Product.products(for: identifiers)
+                    guard products.count == 3, products.allSatisfy({ product in
+                        product.type == .autoRenewable &&
+                        product.subscription?.subscriptionPeriod.unit == .month &&
+                        product.subscription?.subscriptionPeriod.value == 1
+                    }) else { throw CaptureError.invalid }
+                }
                 guard let webView = webView else { throw CaptureError.invalid }
                 phase = "document"
                 try await waitForDocument()
@@ -160,7 +182,31 @@ final class NativeCaptureHarness: NSObject, URLSessionTaskDelegate {
                     """)
                     stable = ready as? Bool == true ? stable + 1 : 0
                     if stable >= 3 {
-                        writeStatus(["state": "ready", "id": id, "route": route, "language": language])
+                        var status = ["state": "ready", "id": id, "route": route, "language": language]
+                        if route == "membership" {
+                            phase = "storekit"
+                            guard let plan = input["plan"], ["essential", "plus", "complete"].contains(plan) else {
+                                throw CaptureError.invalid
+                            }
+                            let visible = try await webView.evaluateJavaScript("""
+                            (() => {
+                                const cards = [...document.querySelectorAll('.service-plan-grid section')];
+                                const card = cards.find(element =>
+                                    element.querySelector('h4')?.textContent?.trim().toLowerCase() === '\(plan)'
+                                );
+                                const button = card?.querySelector('button');
+                                if (cards.length !== 3 || !card?.querySelector('strong')?.textContent || !button || button.disabled) {
+                                    return false;
+                                }
+                                card.scrollIntoView({block: 'center', behavior: 'instant'});
+                                return true;
+                            })()
+                            """)
+                            guard visible as? Bool == true else { throw CaptureError.invalid }
+                            try await Task.sleep(nanoseconds: 500_000_000)
+                            status["plan"] = plan
+                        }
+                        writeStatus(status)
                         return
                     }
                 }

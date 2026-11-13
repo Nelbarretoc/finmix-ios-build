@@ -8,6 +8,11 @@ on:
         description: Exact reviewed private application commit
         required: true
         type: string
+      membership_only:
+        description: Capture the three subscription plans with Apple local StoreKit Testing
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -23,6 +28,7 @@ jobs:
     timeout-minutes: 45
     env:
       FINMIX_CAPTURE_SOURCE_COMMIT: ${{ inputs.source_commit }}
+      FINMIX_CAPTURE_MEMBERSHIP_ONLY: ${{ inputs.membership_only }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -64,16 +70,22 @@ jobs:
             -configuration Debug -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath build/capture CODE_SIGNING_ALLOWED=NO \
-            ENABLE_DEBUG_DYLIB=NO build
+            ENABLE_DEBUG_DYLIB=NO ENABLE_TESTING_SEARCH_PATHS=YES build
       - name: Decode the capture-only reviewer secret into a private runner file
         env:
           FINMIX_CAPTURE_REVIEWER_BASE64: ${{ secrets.FINMIX_CAPTURE_REVIEWER_BASE64 }}
         run: python3 -B .github/scripts/ios-store-capture.py bootstrap
       - name: Capture the authenticated fictional household in English and Spanish
+        shell: bash
         run: |
+          set -euo pipefail
+          capture_options=()
+          if [ "$FINMIX_CAPTURE_MEMBERSHIP_ONLY" = true ]; then
+            capture_options+=(--membership-only)
+          fi
           python3 -B .github/scripts/ios-store-capture.py capture \
             --app build/capture/Build/Products/Debug-iphonesimulator/App.app \
-            --output native-store-screenshots
+            --output native-store-screenshots "${capture_options[@]}"
       - name: Remove the private bootstrap file on every outcome
         if: always()
         run: |
